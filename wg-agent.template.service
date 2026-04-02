@@ -1,0 +1,13 @@
+[Unit]
+Description=WireGuard VPN Agent API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${VPN_AGENT_DIR}
+ExecStart=${VPN_AGENT_DIR}/venv/bin/python ${VPN_AGENT_DIR}/agent.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
