@@ -84,7 +84,7 @@ class WgInterface:
             )
 
         if errors:
-            raise ValueError(errors)
+            raise ValidationError(errors)
 
     def save(self, private_key=None):
         self.validate()
@@ -122,13 +122,27 @@ class WgInterface:
         subprocess.run(
             [
                 "wg", "set", self.name,
-                "listen-port", str(port),
+                "listen-port", str(self.port),
                 "private-key", "/dev/stdin"
             ],
             input=private_key,
             check=True,
             text=True
         )
+
+    def exists(self):
+        try:
+            result = subprocess.run(
+                ["wg", "show", "interfaces"],
+                capture_output=True,
+                check=True,
+                text=True
+            )
+            return self.name in result.stdout.split("\n")
+        except subprocess.CalledProcessError:
+            errors.setdefault("system", []).append(
+                "Could not verify if name is available. Please try again."
+            )
 
     def is_up(self):
         try:
@@ -163,3 +177,12 @@ class WgInterface:
     @property
     def peers(self):
         return PeerManager(self)
+
+
+class ValidationError(Exception):
+    def __init__(self, errors):
+        self.errors = errors
+        super().__init__(errors)
+
+class WgInterfaceNotFound(Exception):
+    pass

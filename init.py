@@ -2,7 +2,7 @@ import os
 import apt
 import subprocess
 import sys
-import wg_manager
+from interface.wg import WgInterface
 from dotenv import load_dotenv
 
 
@@ -40,46 +40,6 @@ def initialize_wireguard():
         print("Wireguard installed successfully.")
 
 
-def initialize_vpn_interface():
-    INTERFACE_NAME=os.getenv("INTERFACE_NAME")
-    INTERFACE_IP_ADDRESS=os.getenv("INTERFACE_IP_ADDRESS")
-    INTERFACE_PORT=os.getenv("INTERFACE_PORT", 51820)
-
-    if not INTERFACE_NAME:
-        print(f"ENV INTERFACE_NAME is missing.")
-        sys.exit(1)
-
-    if not INTERFACE_IP_ADDRESS:
-        print(f"ENV INTERFACE_IP_ADDRESS is missing.")
-        sys.exit(1)
-
-    try:
-        if not wg_manager.is_interface_present(INTERFACE_NAME):
-            print(f"Creating interface {INTERFACE_NAME}...")
-            wg_manager.create_interface(INTERFACE_NAME)
-            print(f"Interface {INTERFACE_NAME} created.")
-
-            print(f"Generating keys...")
-            private_key, public_key = wg_manager.generate_keys()
-
-            print(f"Configuring {name}...")
-            wg_manager.configure_interface(
-                INTERFACE_NAME,
-                private_key,
-                INTERFACE_IP_ADDRESS,
-                INTERFACE_PORT
-            )
-            print(f"{INTERFACE_NAME} successfully configured.")
-
-        if not wg_manager.is_interface_up(INTERFACE_NAME):
-            print(f"Bringing interface {INTERFACE_NAME} up...")
-            wg_manager.bring_up_interface(INTERFACE_NAME)
-            print(f"{INTERFACE_NAME} brought up.")
-
-    except Exception as e:
-        print(f"Something went wrong: {e}")
-
-
 def initialize_venv():
     try:
         import venv
@@ -98,6 +58,42 @@ def initialize_venv():
         )
 
 
+def initialize_vpn_interface():
+    INTERFACE_NAME=os.getenv("INTERFACE_NAME")
+    INTERFACE_IP_ADDRESS=os.getenv("INTERFACE_IP_ADDRESS")
+    INTERFACE_PORT=os.getenv("INTERFACE_PORT", 51820)
+
+    if not INTERFACE_NAME:
+        print(f"ENV INTERFACE_NAME is missing.")
+        sys.exit(1)
+
+    if not INTERFACE_IP_ADDRESS:
+        print(f"ENV INTERFACE_IP_ADDRESS is missing.")
+        sys.exit(1)
+
+    try:
+        wg_interface = WgInterface(
+            name=INTERFACE_NAME,
+            ip_address=INTERFACE_IP_ADDRESS,
+            port=INTERFACE_PORT
+        )
+        if not wg_interface.exists():
+            print(f"Creating interface...")
+            wg_interface.validate()
+            wg_interface.save()
+            print(f"Interface {wg_interface.name} created.")
+
+        if not wg_interface.is_up():
+            print(f"Bringing interface up...")
+            wg_interface.bring_up()
+            print(f"Interface brought up.")
+
+    except ValidationError as e:
+        print(f"{e}")
+    except Exception as e:
+        print(f"Something went wrong: {e}")
+
+
 def initialize_flask():
     subprocess.run(
         [VENV_PYTHON, "-m", "pip", "install", "Flask", "python-dotenv"],
@@ -108,6 +104,6 @@ def initialize_flask():
 
 def initialize_all():
     initialize_wireguard()
-    initialize_vpn_agent()
     initialize_venv()
+    initialize_vpn_agent()
     initialize_flask()

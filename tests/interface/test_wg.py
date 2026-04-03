@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from interface.wg import WgInterface
+from interface.wg import WgInterface, ValidationError
 from faker import Faker
 
 
@@ -40,16 +40,19 @@ class TestWgInterface(unittest.TestCase):
         ):
             return MagicMock(args=cmd, returncode=0)
 
-    def subprocess_check_output_side_effect(self):
+    def subprocess_check_output_side_effect(self, cmd, **kwargs):
         if cmd == ["wg", "genkey"]:
-            return None
+            return "MLsY6DL/VZxZ++EcqVT9j7+roOk2RAd5mB/Uiv0Gfkc="
 
-    def subprocess_popen_side_effect(self):
+    def subprocess_popen_side_effect(self, cmd, **kwargs):
         if cmd == ["wg", "pubkey"]:
-            return None
-
-    def subprocess_communicate_side_effect(self):
-        return None
+            moc_proc = MagicMock()
+            moc_proc.communicate.return_value = (
+                "BvwalLMQTWDkBxhNMKLGyhYT5S/+FaVHT54lBOSNbnc=\n",
+                None
+            )
+            moc_proc.returncode = 0
+            return moc_proc
 
     @patch("subprocess.run")
     def test_invalid_data_fails_validation(self, subprocess_run):
@@ -106,25 +109,24 @@ class TestWgInterface(unittest.TestCase):
         for case, errors in cases:
             with self.subTest(case=case):
                 interface = WgInterface(**case)
-                with self.assertRaises(ValueError) as cm:
+                with self.assertRaises(ValidationError) as cm:
                     interface.validate()
                 self.assertEqual(errors, cm.exception.args[0])
 
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
     @patch("subprocess.Popen")
-    @patch("subprocess.communicate")
-    def valid_data_cases_validate_and_save(
+    @patch("subprocess.check_output")
+    @patch("subprocess.run")
+    def test_valid_data_cases_validate_and_save(
         self,
         subprocess_run,
         subprocess_check_output,
-        subprocess_popen,
-        subprocess_communicate
+        subprocess_popen
     ):
         cases = [
             {
                 "name": faker.pystr(max_chars=15),
-                "ip_address": "10.29.30.1"
+                "ip_address": "10.29.30.1",
+                "port": 7488
             },
             {
                 "name": faker.pystr(max_chars=10),
@@ -136,7 +138,6 @@ class TestWgInterface(unittest.TestCase):
         subprocess_run.side_effect = self.subprocess_run_side_effect
         subprocess_check_output.side_effect = self.subprocess_check_output_side_effect
         subprocess_popen.side_effect = self.subprocess_popen_side_effect
-        subprocess_communicate.side_effect = self.subprocess_communicate_side_effect
         for case in cases:
             with self.subTest(case=case):
                 interface = WgInterface(**case)
@@ -145,7 +146,8 @@ class TestWgInterface(unittest.TestCase):
 
         interface = WgInterface(
             name=faker.pystr(max_chars=7),
-            ip_address="198.456.33.1/24"
+            ip_address="198.156.33.1/24",
+            port=51820
         )
         interface.save("gNNBxgDB/1E48F/UK9PiKcXoPIWR9/13Is6tJcxrUn4=")
         self.assertIsNotNone(interface.public_key)
