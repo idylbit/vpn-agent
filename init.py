@@ -3,7 +3,10 @@ import apt
 import subprocess
 import sys
 import wg_manager
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 VENV_DIR = os.path.join(os.getcwd(), "venv")
 VENV_PYTHON = os.path.join(VENV_DIR, "bin", "python")
@@ -38,40 +41,40 @@ def initialize_wireguard():
 
 
 def initialize_vpn_interface():
-    name = wg_manager.INTERFACE_NAME
-    ip = wg_manager.INTERFACE_IP_ADDRESS
-    port = wg_manager.INTERFACE_PORT
+    INTERFACE_NAME=os.getenv("INTERFACE_NAME")
+    INTERFACE_IP_ADDRESS=os.getenv("INTERFACE_IP_ADDRESS")
+    INTERFACE_PORT=os.getenv("INTERFACE_PORT", 51820)
 
-    if not name:
+    if not INTERFACE_NAME:
         print(f"ENV INTERFACE_NAME is missing.")
         sys.exit(1)
 
-    if not ip:
+    if not INTERFACE_IP_ADDRESS:
         print(f"ENV INTERFACE_IP_ADDRESS is missing.")
         sys.exit(1)
 
     try:
-        if not wg_manager.is_interface_present(name):
-            print(f"Creating interface {name}...")
-            wg_manager.create_interface(name)
-            print(f"Interface {name} created.")
+        if not wg_manager.is_interface_present(INTERFACE_NAME):
+            print(f"Creating interface {INTERFACE_NAME}...")
+            wg_manager.create_interface(INTERFACE_NAME)
+            print(f"Interface {INTERFACE_NAME} created.")
 
             print(f"Generating keys...")
             private_key, public_key = wg_manager.generate_keys()
 
             print(f"Configuring {name}...")
             wg_manager.configure_interface(
-                name,
+                INTERFACE_NAME,
                 private_key,
-                ip,
-                port
+                INTERFACE_IP_ADDRESS,
+                INTERFACE_PORT
             )
-            print(f"{name} successfully configured.")
+            print(f"{INTERFACE_NAME} successfully configured.")
 
-        if not wg_manager.is_interface_up(name):
-            print(f"Bringing interface {name} up...")
-            wg_manager.bring_up_interface(name)
-            print(f"{name} brought up.")
+        if not wg_manager.is_interface_up(INTERFACE_NAME):
+            print(f"Bringing interface {INTERFACE_NAME} up...")
+            wg_manager.bring_up_interface(INTERFACE_NAME)
+            print(f"{INTERFACE_NAME} brought up.")
 
     except Exception as e:
         print(f"Something went wrong: {e}")
@@ -97,7 +100,7 @@ def initialize_venv():
 
 def initialize_flask():
     subprocess.run(
-        [VENV_PYTHON, "-m", "pip", "install", "flask", "python-dotenv"],
+        [VENV_PYTHON, "-m", "pip", "install", "Flask", "python-dotenv"],
         check=True
     )
     return True

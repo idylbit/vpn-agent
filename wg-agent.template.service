@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=${VPN_AGENT_DIR}
-ExecStart=${VPN_AGENT_DIR}/venv/bin/python ${VPN_AGENT_DIR}/agent.py
+ExecStart=${VPN_AGENT_DIR}/venv/bin/python ${VPN_AGENT_DIR}/main.py
 Restart=always
 
 [Install]
