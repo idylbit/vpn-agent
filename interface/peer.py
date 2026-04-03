@@ -1,6 +1,5 @@
 import os
 import re
-import wg_manager
 
 
 class PeerManager:
