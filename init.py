@@ -96,7 +96,7 @@ def initialize_vpn_interface():
 
 def initialize_flask():
     subprocess.run(
-        [VENV_PYTHON, "-m", "pip", "install", "Flask", "python-dotenv"],
+        [VENV_PYTHON, "-m", "pip", "install", "-r", "requirements.txt"],
         check=True
     )
     return True

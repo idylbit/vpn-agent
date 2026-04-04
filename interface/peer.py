@@ -2,6 +2,7 @@ import os
 import re
 import ipaddress
 import subprocess
+from .executor import WgExecutor
 
 
 class PeerManager:

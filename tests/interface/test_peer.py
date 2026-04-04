@@ -90,7 +90,7 @@ class TestPeer(unittest.TestCase):
         cases = [
             {
                 "public_key": self.new_public_key,
-                "endpoint": "103.339.33.1:32984",
+                "endpoint": "103.139.33.1:32984",
                 "allowed_ips": "10.29.30.1/32",
                 "preshared_key": self.new_public_key
             },

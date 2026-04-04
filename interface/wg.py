@@ -4,6 +4,54 @@ import re
 from .peer import PeerManager
 
 
+class WgInterfaceManager:
+    def all(self):
+        try:
+            output = subprocess.check_output(
+                ["wg", "show", "interfaces"],
+                text=True
+            )
+            lines = output.strip().split('\n')
+            results = []
+            for line in lines:
+                results.append(
+                    WgInterface(
+                        name=line
+                    )
+                )
+            return results
+        except (subprocess.CalledProcessError, IndexError):
+            return []
+
+    def filter(self, **kwargs):
+        return [
+            p for p in self.all() 
+            if all(
+                getattr(p, k, None) == v
+                for k, v in kwargs.items()
+            )
+        ]
+                
+    def get(self, **kwargs):
+        for p in self.all():
+            if all(
+                getattr(p, k, None) == v
+                for k, v in kwargs.items()
+            ):
+                return p
+        return None
+
+    def create(self, **kwargs):
+        wg_interface = WgInterface(**kwargs)
+        wg_interface.save()
+
+    def delete(self, **kwargs):
+        wg_interface = self.get(**kwargs)
+        if not wg_interface:
+            raise WgInterfaceNotFound("Interface not found.")
+        wg_interface.delete()
+
+
 class WgInterface:
     def __init__(self, name: str, ip_address, port: int):
         self.name = name

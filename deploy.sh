@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-SSH_SERVER="ubuntuvm"
-APP_DIR="/home/japheth/.vpn-agent"
+SSH_SERVER=$1
+APP_DIR=".vpn-agent"
 
 sed "s|\${VPN_AGENT_DIR}|$APP_DIR|g" wg-agent.service.template.service > wg-agent.service
 
