@@ -17,13 +17,13 @@ rsync -avz --no-perms --no-owner --no-group \
   requirements.txt \
   "$SSH_SERVER:$APP_DIR/"
 
-ssh -tt "$SSH_SERVER" <<EOF
+ssh -t "$SSH_SERVER" "sudo -v"
+
+ssh "$SSH_SERVER" <<EOF
 set -euo pipefail
-
+sudo apt update && sudo apt install -y python3.13-venv
 cd "\$HOME/$APP_DIR"
-
-sudo python3 init.py
-
+sudo python3 setup.py
 systemctl status vpnagent
 
 EOF

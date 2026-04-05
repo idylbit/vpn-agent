@@ -3,14 +3,11 @@ import apt
 import subprocess
 import sys
 from interface.executor import WgExecutor
-from dotenv import load_dotenv
 
 
-load_dotenv()
-
-VPN_AGENT_DIR = os.getenv("VPN_AGENT_DIR", os.getcwd())
-VENV_DIR = os.getenv("VPN_AGENT_VENV_DIR", os.path.join(VPN_AGENT_DIR, "venv"))
-VENV_PYTHON = os.getenv(os.path.join(VENV_DIR, "bin", "python")
+VPN_AGENT_DIR = os.getcwd()
+VENV_DIR = os.path.join(VPN_AGENT_DIR, "venv")
+VENV_PYTHON = os.path.join(VENV_DIR, "bin", "python")
 
 
 def is_root() -> bool:
@@ -41,19 +38,17 @@ def initialize_wireguard():
 
 
 def initialize_venv():
-    try:
-        import venv
-    except ImportError:
-        print("python3-venv is missing. Installing...")
-        subprocess.run(
-            ["apt-get", "install", "-y", "python3-venv"],
-            check=True
-        )
+    subprocess.run([
+        "apt-get", "install", "-y", 
+        "python3-venv", 
+        "python3-pip", 
+        "python3-full"
+    ], check=True)
 
     if not os.path.exists(VENV_DIR):
         print("Creating virtual environment...")
         subprocess.run(
-            ["python3", "-m", "venv", VENV_DIR],
+            [sys.executable, "-m", "venv", VENV_DIR],
             check=True
         )
     subprocess.run(
@@ -97,7 +92,7 @@ def initialize_vpnagent():
 
 
 def create_systemd_service():
-    entry_point = os.path.join(app_dir, "main.py")
+    entry_point = os.path.join(VPN_AGENT_DIR, "main.py")
     service_content = f"""[Unit]
 Description=WireGuard VPN Agent API
 After=network.target
@@ -123,13 +118,12 @@ WantedBy=multi-user.target
     print(f"Service created and enabled at {service_path}")
 
 
-def initialize_all():
+if __name__ == "__main__":
     if not is_root:
         print("Intitialize script must run as root to setup vpn agent. It will not run as root after seetup.")
         sys.exit(1)
     initialize_wireguard()
     initialize_venv()
-    install_requirements()
     initialize_vpnagent()
     create_systemd_service()
     print("Starting the VPN Agent as 'vpnagent' user...")

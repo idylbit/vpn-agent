@@ -56,7 +56,7 @@ class WgExecutor:
 
     @classmethod
     def _sudo_run(cls, cmd: list, **kwargs) -> str:
-        return cls._run(["sudo"]+cmd, **kwargs)
+        return cls._run(["sudo", "-n"] + cmd, **kwargs)
 
     @classmethod
     def get_private_key(cls) -> str:
