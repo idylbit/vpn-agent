@@ -9,11 +9,14 @@ class PeerManager:
         self.interface = interface
 
     def all(self) -> list[Peer]:
-        results = WgInterface.get_interface_peers(
+        results = WgExecutor.get_interface_peers(
             self.interface.name
         )
         return [
-            Peer(**interface_peer)
+            Peer(
+                interface=self.interface,
+                **interface_peer
+            )
             for interface_peer in results
         ]
 
@@ -22,15 +25,15 @@ class PeerManager:
             peer
             for peer in self.all()
             if all(
-                getattr(p, k, None) == v
+                getattr(peer, k, None) == v
                 for k, v in kwargs.items()
             )
         ]
-        if len(peer) > 1:
+        if len(peers) > 1:
             raise ManyPeersFound("More than one peer found.")
-        elif len(peer) == 1:
+        elif len(peers) == 1:
             return peers[0]
-        raise PeerNotfound("Peer not found.")
+        raise PeerDoesNotExist("Peer not found.")
 
     def create(self, **kwargs) -> Peer:
         peer = Peer(**kwargs)
@@ -130,6 +133,7 @@ class Peer:
             
         self.validate()
         WgExecutor.add_interface_peer(
+            self.interface.name,
             self.public_key,
             self.allowed_ips,
             self.endpoint,
@@ -161,7 +165,7 @@ class ValidationError(Exception):
         super().__init__(errors)
 
 
-class PeerNotFound(Exception):
+class PeerDoesNotExist(Exception):
     pass
 
 

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from interface.peer import Peer, PeerNotFound, ValidationError
+from interface.peer import Peer, PeerDoesNotExist, ValidationError
 from interface.wg import WgInterface
 
 
@@ -9,31 +9,42 @@ class TestPeer(unittest.TestCase):
         self.taken_public_key = "1WwjBZqEqMytJNq9WoxFwvZXxSGBK5gqyMv9gL7HcVY="
         self.taken_allowed_ips = "10.200.0.5/32"
         self.new_public_key = "luScmBj4B5+Dz0x4VQWAKSaYLCvDNC9A9J0szbfUejQ="
-        self.interface = WgInterface(name="wg0", ip_address="10.200.0.1/24", port="3949")
+        self.interface = WgInterface(
+            name="wg0",
+            ip_address="10.200.0.1/24",
+            port="3949"
+        )
 
-    def subprocess_run_side_effect(self, cmd, **kwargs):
+    def wg_executor_sudo_run_side_effect(self, cmd, **kwargs):
         if (
             len(cmd) == 7 and
             cmd[0] == "wg" and cmd[1] == "set" and
             cmd[3] == "peer" and cmd[5] == "allowed-ips"
         ):
-            return MagicMock(args=cmd, returncode=0)
-
-    def subprocess_check_output_side_effect(self, cmd, **kwargs):
-        if (
+            return None
+        elif (
             len(cmd) == 4 and
             cmd[0] == "wg" and cmd[1] == "show" and
             cmd[3] == "dump"
         ):
             return f'eInCyoU8GpGk7ZzkHYNo/uV0CJKKTYXElElc0qsHyn8=\tiRZw/KhsKYIlP/HEfyPtebkEdsHLxuRhb5BRHyWmkSM=\t51820\toff\n{self.taken_public_key}\t(none)\t(none)\t{self.taken_allowed_ips}\t0\t0\t0\toff\n'
+        elif (
+            len(cmd) == 6 and
+            cmd[0] == "wg" and cmd[1] == "set" and
+            cmd[3] == "peer" and cmd[4] == self.taken_public_key and
+            cmd[5] == "remove"
+        ):
+            return None
+        elif (
+            len(cmd) == 6 and
+            cmd[0] == "wg" and cmd[1] == "set" and
+            cmd[3] == "peer" and cmd[4] == self.taken_public_key and
+            cmd[5] == "remove"
+        ):
+            raise PeerDoesNotExist("Peer not found.")
 
-    @patch("subprocess.check_output")
-    @patch("subprocess.run")
-    def test_invalid_data_fails_validation(
-        self,
-        subprocess_run,
-        subprocess_check_output
-    ):
+    @patch("interface.executor.WgExecutor._sudo_run")
+    def test_invalid_data_fails_validation(self, wg_executor_sudo_run):
         cases = [
             (
                 {
@@ -68,8 +79,7 @@ class TestPeer(unittest.TestCase):
             )
         ]
 
-        subprocess_run.side_effect = self.subprocess_run_side_effect
-        subprocess_check_output.side_effect = self.subprocess_check_output_side_effect
+        wg_executor_sudo_run.side_effect = self.wg_executor_sudo_run_side_effect
         for case, errors in cases:
             with self.subTest(case=case):
                 peer = Peer(self.interface, **case)
@@ -80,13 +90,8 @@ class TestPeer(unittest.TestCase):
                     cm.exception.args[0]
                 )
 
-    @patch("subprocess.check_output")
-    @patch("subprocess.run")
-    def test_valid_data_cases_validate_and_save(
-        self,
-        subprocess_run,
-        subprocess_check_output
-    ):
+    @patch("interface.executor.WgExecutor._sudo_run")
+    def test_valid_data_cases_validate_and_save(self, wg_executor_sudo_run):
         cases = [
             {
                 "public_key": self.new_public_key,
@@ -108,27 +113,22 @@ class TestPeer(unittest.TestCase):
             }
         ]
 
-        subprocess_run.side_effect = self.subprocess_run_side_effect
-        subprocess_check_output.side_effect = self.subprocess_check_output_side_effect
+        wg_executor_sudo_run.side_effect = self.wg_executor_sudo_run_side_effect
         for case in cases:
             with self.subTest(case=case):
                 peer = Peer(self.interface, **case)
                 peer.save()
                 self.assertIsNotNone(peer.allowed_ips)
 
-    @patch("subprocess.check_output")
-    @patch("subprocess.run")
-    def test_remove_non_existing_peer_throws_an_error(self, subprocess_run, subprocess_check_output):
-        subprocess_run.side_effect = self.subprocess_run_side_effect
-        subprocess_check_output.side_effect = self.subprocess_check_output_side_effect
-        with self.assertRaises(PeerNotFound):
+    @patch("interface.executor.WgExecutor._sudo_run")
+    def test_remove_non_existing_peer_throws_an_error(self, wg_executor_sudo_run):
+        wg_executor_sudo_run.side_effect = self.wg_executor_sudo_run_side_effect
+        with self.assertRaises(PeerDoesNotExist):
             self.interface.peers.delete(public_key=self.new_public_key)
 
-    @patch("subprocess.check_output")
-    @patch("subprocess.run")
-    def test_remove_existing_peer_deletes_it(self, subprocess_run, subprocess_check_output):
-        subprocess_run.side_effect = self.subprocess_run_side_effect
-        subprocess_check_output.side_effect = self.subprocess_check_output_side_effect
+    @patch("interface.executor.WgExecutor._sudo_run")
+    def test_remove_existing_peer_deletes_it(self, wg_executor_sudo_run):
+        wg_executor_sudo_run.side_effect = self.wg_executor_sudo_run_side_effect
         self.interface.peers.delete(public_key=self.taken_public_key)
 
 

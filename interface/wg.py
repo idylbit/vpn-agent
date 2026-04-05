@@ -38,6 +38,10 @@ class WgInterfaceManager:
 
 
 class WgInterface:
+    @property
+    def objects(self):
+        return WgInterfaceManager
+
     def __init__(
         self,
         name: str,
@@ -105,7 +109,7 @@ class WgInterface:
 
     def save(self, private_key=None):
         self.validate()
-        WgExecutor.init_interface(
+        self.public_key = WgExecutor.init_interface(
             name=self.name,
             ip_address=self.ip_address,
             port=self.port,

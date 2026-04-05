@@ -59,12 +59,12 @@ class WgExecutor:
         return cls._run(["sudo"]+cmd, **kwargs)
 
     @classmethod
-    def get_private_key() -> str:
+    def get_private_key(cls) -> str:
         return cls._run(["wg", "genkey"]).strip()
 
     @classmethod
-    def get_public_key(private_key: str) -> str:
-        return result = cls._run(
+    def get_public_key(cls, private_key: str) -> str:
+        return cls._run(
             ["wg", "pubkey"],
             input=private_key
         ).strip()
@@ -112,15 +112,15 @@ class WgExecutor:
         name: str,
         ip_address: str,
         port: str,
-        private_key=None
+        private_key: str | None=None
     ):
         try:
             if not private_key:
                 private_key = cls.get_private_key()
             cls.create_link(name)
-            cls.set_ip(ip_address)
+            cls.set_ip(name, ip_address)
             cls.apply_config(name, port, private_key)
-            cls.set_up(name)
+            cls.bring_up(name)
             return cls.get_public_key(private_key)
         except Exception:
             cls.delete_link(name)
@@ -155,19 +155,18 @@ class WgExecutor:
     @classmethod
     def is_port_taken(cls, port: int) -> bool:
         result = cls._run(["ss", "-uln"])
-        return f":{port_int} " in result
+        return f":{port} " in result
 
     @classmethod
     def get_interface_peers(cls, name) -> list[InterfacePeer]:
         results = cls._sudo_run(["wg", "show", name, "dump"])
         try:
-            lines = output.strip().split('\n')
+            lines = results.strip().split('\n')
             results = []
             for line in lines[1:]:
                 parts = line.split('\t')
                 results.append(
                     InterfacePeer(
-                        interface=self.interface,
                         public_key=parts[0],
                         preshared_key=parts[1],
                         endpoint=parts[2] if parts[2] != '(none)' else None,
@@ -186,6 +185,7 @@ class WgExecutor:
         cls,
         name: str,
         public_key: str,
+        allowed_ips: str,
         endpoint: str | None = None,
         preshared_key: str | None = None
     ):
@@ -204,7 +204,7 @@ class WgExecutor:
 
     @classmethod
     def remove_interface_peer(cls, name: str, public_key: str):
-        cls._run([
+        cls._sudo_run([
             "wg", "set", name, 
             "peer", public_key, "remove"
         ])
