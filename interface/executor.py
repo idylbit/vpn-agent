@@ -8,12 +8,22 @@ class Interface(TypedDict):
     ifname: str
     flags: list[str]
     mtu: int
-    qdisc: str,
+    qdisc: str
     operstate: str
-    linkmode: str,
-    group: str,
-    txqlen: int,
+    linkmode: str
+    group: str
+    txqlen: int
     link_type: str
+
+
+class InterfacePeer(TypedDict):
+    public_key: str
+    preshared_key: str
+    endpoint: str | None
+    allowed_ips: str
+    latest_handshake: int
+    transfer_rx: int
+    transfer_tx: int
 
 
 class WgExecutor:
@@ -23,8 +33,10 @@ class WgExecutor:
         "/usr/bin/wg set * listen-port * private-key * /dev/stdin",
         "/usr/sbin/ip link set * up",
         "/usr/sbin/ip link set * down",
-        "/usr/bin/wg set * peer * allowed-ips *",
-        "/usr/sbin/ip link delete *"
+        "/usr/sbin/ip link delete *",
+        "/usr/sbin/wg show * dump",
+        "/usr/bin/wg set * peer * remove *",
+        "/usr/bin/wg set * peer * allowed-ips *"
     ]
 
     @classmethod
@@ -144,3 +156,55 @@ class WgExecutor:
     def is_port_taken(cls, port: int) -> bool:
         result = cls._run(["ss", "-uln"])
         return f":{port_int} " in result
+
+    @classmethod
+    def get_interface_peers(cls, name) -> list[InterfacePeer]:
+        results = cls._sudo_run(["wg", "show", name, "dump"])
+        try:
+            lines = output.strip().split('\n')
+            results = []
+            for line in lines[1:]:
+                parts = line.split('\t')
+                results.append(
+                    InterfacePeer(
+                        interface=self.interface,
+                        public_key=parts[0],
+                        preshared_key=parts[1],
+                        endpoint=parts[2] if parts[2] != '(none)' else None,
+                        allowed_ips=parts[3],
+                        latest_handshake=int(parts[4]),
+                        transfer_rx=int(parts[5]),
+                        transfer_tx=int(parts[6])
+                    )
+                )
+            return results
+        except IndexError:
+            return []
+
+    @classmethod
+    def add_interface_peer(
+        cls,
+        name: str,
+        public_key: str,
+        endpoint: str | None = None,
+        preshared_key: str | None = None
+    ):
+        cmd = [
+            "wg", "set", name,
+            "peer", public_key,
+            "allowed-ips", allowed_ips
+        ]
+        if endpoint:
+            cmd.extend(["endpoint", endpoint])
+        if preshared_key:
+            cmd.extend(["preshared-key", "/dev/stdin"])
+            cls._sudo_run(cmd, input=preshared_key)
+        else:
+            cls._sudo_run(cmd)
+
+    @classmethod
+    def remove_interface_peer(cls, name: str, public_key: str):
+        cls._run([
+            "wg", "set", name, 
+            "peer", public_key, "remove"
+        ])

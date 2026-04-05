@@ -8,40 +8,44 @@ class PeerManager:
     def __init__(self, interface):
         self.interface = interface
 
-    def all(self) -> list[Peer]:
+    def all(self):
         results = WgInterface.get_interface_peers(
             self.interface.name
         )
         return [
-            Peer(**interface_peer)
+            Peer(interface_peer)
             for interface_peer in results
         ]
 
-    def get(self, **kwargs) -> Peer:
-        peers = [
-            peer
-            for peer in self.all()
+    def filter(self, **kwargs):
+        return [
+            p for p in self.all() 
             if all(
                 getattr(p, k, None) == v
                 for k, v in kwargs.items()
             )
         ]
-        if len(peer) > 1:
-            raise ManyPeersFound("More than one peer found.")
-        elif len(peer) == 1:
-            return peers[0]
-        raise PeerNotfound("Peer not found.")
+                
+    def get(self, **kwargs):
+        for p in self.all():
+            if all(
+                getattr(p, k, None) == v
+                for k, v in kwargs.items()
+            ):
+                return p
+        return None
 
-    def create(self, **kwargs) -> Peer:
+    def create(self, **kwargs):
         peer = Peer(**kwargs)
         peer.save()
-        return peer
 
     def delete(self, **kwargs):
         peer = self.get(**kwargs)
+        if not peer:
+            raise PeerNotFound("Peer not found.")
         peer.delete()
 
-    def get_next_available_allowed_ip(self):
+    def get_next_available_ip(self):
         interface_ip_address = ipaddress.IPv4Interface(
             self.interface.ip_address
         )
@@ -59,9 +63,7 @@ class PeerManager:
             if str(ip) not in used_ips:
                 return f"{ip}/32"
 
-        raise IPExhausted(
-            "No available IP addresses in the interface subnet."
-        )
+        raise IPExhaustedError("No available IP addresses in the interface subnet.")
 
 
 class Peer:
@@ -92,10 +94,7 @@ class Peer:
             errors["public_key"] = ["Invalid public key format."]
 
         if self.allowed_ips:
-            if not re.match(
-                r'^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$',
-                self.allowed_ips
-            ):
+            if not re.match(r'^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$', self.allowed_ips):
                 errors["allowed_ips"] = ["Invalid ip address format. Expected format like 10.0.0.2/32."]
 
         if self.endpoint:
@@ -106,10 +105,7 @@ class Peer:
                 errors["endpoint"] = ["Invalid endpoint format. Expected 'host:port' or 'ip:port'."]
 
         if self.preshared_key:
-            if not re.match(
-                r'^[A-Za-z0-9+/]{42,43}=$',
-                self.preshared_key
-            ):
+            if not re.match(r'^[A-Za-z0-9+/]{42,43}=$', self.preshared_key):
                 errors["preshared_key"] = ["Invalid preshared key format."]
 
         if not errors:
@@ -126,21 +122,30 @@ class Peer:
 
     def save(self):
         if not self.allowed_ips:
-            self.allowed_ips = self.interface.peers.get_next_available_allowed_ip()
+            self.allowed_ips = self.interface.peers.get_next_available_ip()
             
         self.validate()
-        WgExecutor.add_interface_peer(
-            self.public_key,
-            self.allowed_ips,
-            self.endpoint,
-            self.preshared_key
-        )
+
+        cmd = [
+            "wg", "set", self.interface.name,
+            "peer", self.public_key,
+            "allowed-ips", self.allowed_ips
+        ]
+
+        if self.endpoint:
+            cmd.extend(["endpoint", self.endpoint])
+
+        if self.preshared_key:
+            cmd.extend(["preshared-key", "/dev/stdin"])
+            subprocess.run(cmd, input=self.preshared_key, text=True, check=True)
+        else:
+            subprocess.run(cmd, check=True)
 
     def delete(self):
-        WgExecutor.remove_interface_peer(
-            self.interface.name,
-            self.public_key
-        )
+        subprocess.run([
+            "wg", "set", self.interface.name, 
+            "peer", self.public_key, "remove"
+        ], check=True)
 
     @property
     def latest_handshake(self):
@@ -160,14 +165,8 @@ class ValidationError(Exception):
         self.errors = errors
         super().__init__(errors)
 
-
 class PeerNotFound(Exception):
     pass
 
-
-class IPExhausted(Exception):
-    pass
-
-
-class ManyPeersFound(Exception):
+class IPExhaustedError(Exception):
     pass

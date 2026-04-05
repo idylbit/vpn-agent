@@ -22,7 +22,7 @@ class WgInterfaceManager:
             )
         ]
         if len(interfaces) > 1:
-            raise ManyWgInterfaces("More than one interfaces found.")
+            raise ManyWgInterfacesFound("More than one interfaces found.")
         elif len(interfaces) == 1:
             return interfaces[0]
         raise WgInterfaceDoesNotExist("Interface not found.")
@@ -43,20 +43,17 @@ class WgInterface:
         name: str,
         ip_address: str,
         port: int,
-        ifindex=None,
-        operstate="UNKNOWN",
-        mtu=1420,
-        flags=None
+        **kwargs
     ):
         self.name = name
         self.ip_address = ip_address
         self.port = port
         self.public_key = None
 
-        self.ifindex = ifindex
-        self.operstate = operstate
-        self.mtu = mtu
-        self.flags = flags or []
+        self.ifindex = kwargs.get("ifindex", None)
+        self.operstate = kwargs.get("operstate", "UNKNOWN")
+        self.mtu = kwargs.get("mtu", 1420)
+        self.flags = kwargs.get("flags", [])
 
     def validate(self):
         errors = {}
@@ -138,8 +135,10 @@ class ValidationError(Exception):
         self.errors = errors
         super().__init__(errors)
 
+
 class WgInterfaceDoesNotExist(Exception):
     pass
 
-class ManyWgInterfaces(Exception):
+
+class ManyWgInterfacesFound(Exception):
     pass
