@@ -1,63 +1,62 @@
-import subprocess
 import ipaddress
 import re
 from .peer import PeerManager
+from .executor import WgExecutor
 
 
 class WgInterfaceManager:
-    def all(self):
-        try:
-            output = subprocess.check_output(
-                ["wg", "show", "interfaces"],
-                text=True
-            )
-            lines = output.strip().split('\n')
-            results = []
-            for line in lines:
-                results.append(
-                    WgInterface(
-                        name=line
-                    )
-                )
-            return results
-        except (subprocess.CalledProcessError, IndexError):
-            return []
-
-    def filter(self, **kwargs):
+    def all(self) -> list[WgInterface]:
+        interfaces = WgExecutor.get_interfaces()
         return [
-            p for p in self.all() 
+            WgInterface(**interface)
+            for interface in interfaces
+        ]
+
+    def get(self, **kwargs) -> WgInterface:
+        interfaces = [
+            interface
+            for interface in self.all()
             if all(
                 getattr(p, k, None) == v
                 for k, v in kwargs.items()
             )
         ]
-                
-    def get(self, **kwargs):
-        for p in self.all():
-            if all(
-                getattr(p, k, None) == v
-                for k, v in kwargs.items()
-            ):
-                return p
-        return None
+        if len(interfaces) > 1:
+            raise ManyWgInterfaces("More than one interfaces found.")
+        elif len(interfaces) == 1:
+            return interfaces[0]
+        raise WgInterfaceDoesNotExist("Interface not found.")
 
-    def create(self, **kwargs):
+    def create(self, **kwargs) -> WgInterface:
         wg_interface = WgInterface(**kwargs)
         wg_interface.save()
+        return WgInterface
 
     def delete(self, **kwargs):
         wg_interface = self.get(**kwargs)
-        if not wg_interface:
-            raise WgInterfaceNotFound("Interface not found.")
         wg_interface.delete()
 
 
 class WgInterface:
-    def __init__(self, name: str, ip_address, port: int):
+    def __init__(
+        self,
+        name: str,
+        ip_address: str,
+        port: int,
+        ifindex=None,
+        operstate="UNKNOWN",
+        mtu=1420,
+        flags=None
+    ):
         self.name = name
         self.ip_address = ip_address
         self.port = port
         self.public_key = None
+
+        self.ifindex = ifindex
+        self.operstate = operstate
+        self.mtu = mtu
+        self.flags = flags or []
 
     def validate(self):
         errors = {}
@@ -67,62 +66,35 @@ class WgInterface:
             name_errors.append("This field cannot be empty.")
         else:
             if len(self.name) > 15:
-                name_errors.append("Ensure this field has no more than 15 characters.")
+                name_errors.append(
+                    "Ensure this field has no more than 15 characters."
+                )
             if not re.match(r'^[a-zA-Z0-9_=+.-]+$', self.name):
-                name_errors.append("May contain only a-z, 0-9, _, =, +, ., -.")
+                name_errors.append(
+                    "May contain only a-z, 0-9, _, =, +, ., -."
+                )
 
         if not name_errors:
-            try:
-                result = subprocess.run(
-                    ["wg", "show", "interfaces"],
-                    capture_output=True,
-                    check=True,
-                    text=True
-                )
-                if self.name in result.stdout.split("\n"):
-                    name_errors.append("Interface with this name already exists.")
-            except subprocess.CalledProcessError:
-                errors.setdefault("system", []).append(
-                    "Could not verify if name is available. Please try again."
-                )
+            if self.name in WgExecutor.get_interface_names():
+                name_errors.append("Interface with this name already exists.")
         
         if name_errors:
             errors["name"] = name_errors
 
         try:
             parsed_ipv4interface = ipaddress.IPv4Interface(self.ip_address)
-
-            result = subprocess.run(
-                ["ip", "-o", "addr", "show"],
-                capture_output=True, text=True, check=True
-            )
-            
-            if str(parsed_ipv4interface.ip) in result.stdout:
-                for line in result.stdout.splitlines():
-                    if (
-                        str(parsed_ipv4interface.ip) in line and
-                        self.name not in line
-                    ):
-                        errors.setdefault("ip_address", []).append(
-                            f"IP address is already assigned to another interface."
-                        )
-                        break
+            if WgExecutor.is_ip_taken(str(parsed_ipv4interface.ip)):
+                errors.setdefault("ip_address", []).append(
+                    f"IP address is already assigned to another interface."
+                )
         except (ipaddress.AddressValueError, ValueError):
             errors["ip_address"] = ["Invalid IPv4 address or subnet mask."]
-        except subprocess.CalledProcessError:
-            errors.setdefault("system", []).append(
-                "Could not verify system IP assignments."
-            )
 
         try:
             port_int = int(self.port)
             if not (1 <= port_int <= 65535):
                 raise ValueError()
-            result = subprocess.run(
-                ["ss", "-uln"], 
-                capture_output=True, text=True, check=True
-            )
-            if f":{port_int} " in result.stdout:
+            if WgExecutor.is_port_taken(port_int):
                 errors.setdefault("port", []).append(
                     "This port is already in use by another service."
                 )
@@ -136,95 +108,29 @@ class WgInterface:
 
     def save(self, private_key=None):
         self.validate()
-
-        subprocess.run(
-            [
-                "ip", "link", "add", f"{self.name}",
-                "type", "wireguard"
-            ],
-            check=True
+        WgExecutor.init_interface(
+            name=self.name,
+            ip_address=self.ip_address,
+            port=self.port,
+            private_key=private_key
         )
-
-        if not private_key:
-            private_key = subprocess.check_output(
-                ["wg", "genkey"],
-                text=True
-            ).strip()
-            
-        proc = subprocess.Popen(
-            ["wg", "pubkey"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True
-        )
-        pub_key, _ = proc.communicate(input=private_key)
-        self.public_key = pub_key.strip()
-
-        subprocess.run(
-            [
-                "ip", "addr", "add", self.ip_address,
-                "dev", self.name
-            ],
-            check=True
-        )
-        subprocess.run(
-            [
-                "wg", "set", self.name,
-                "listen-port", str(self.port),
-                "private-key", "/dev/stdin"
-            ],
-            input=private_key,
-            check=True,
-            text=True
-        )
-
-    def exists(self):
-        try:
-            result = subprocess.run(
-                ["wg", "show", "interfaces"],
-                capture_output=True,
-                check=True,
-                text=True
-            )
-            return self.name in result.stdout.split("\n")
-        except subprocess.CalledProcessError:
-            errors.setdefault("system", []).append(
-                "Could not verify if name is available. Please try again."
-            )
-
-    def is_up(self):
-        try:
-            result = subprocess.run(
-                ["ip", "link", "show", self.name],
-                capture_output=True,
-                check=True,
-                text=True
-            )
-            return "UP" in result.stdout
-        except subprocess.CalledProcessError:
-            return False
 
     def bring_up(self):
-        subprocess.run(
-            ["ip", "link", "set", self.name, "up"],
-            check=True
-        )
+        WgExecutor.bring_up(self.name)
 
     def bring_down(self):
-        subprocess.run(
-            ["ip", "link", "set", name, "down"],
-            check=True
-        )
+        WgExecutor.bring_down(self.name)
 
     def delete(self):
-        subprocess.run(
-            ["ip", "link", "delete", "dev", self.name],
-            check=True
-        )
+        WgExecutor.delete(self.name)
 
     @property
     def peers(self):
         return PeerManager(self)
+
+    @property
+    def is_active(self) -> bool:
+        return "UP" in self.flags
 
 
 class ValidationError(Exception):
@@ -232,5 +138,8 @@ class ValidationError(Exception):
         self.errors = errors
         super().__init__(errors)
 
-class WgInterfaceNotFound(Exception):
+class WgInterfaceDoesNotExist(Exception):
+    pass
+
+class ManyWgInterfaces(Exception):
     pass

@@ -5,25 +5,28 @@ set -euo pipefail
 SSH_SERVER=$1
 APP_DIR=".vpn-agent"
 
-sed "s|\${VPN_AGENT_DIR}|$APP_DIR|g" wg-agent.service.template.service > wg-agent.service
-
 echo "Initializing"
 ssh "$SSH_SERVER" "mkdir -p $APP_DIR"
 rsync -avz --no-perms --no-owner --no-group \
-  . \
-  --exclude 'wg-agent.template.service' \
-  --exclude 'deploy.sh' \
+  api \
+  interface \
+  .env \
+  __init__.py \
+  init.py \
+  main.py \
+  requirements.txt \
+  wg-agent.template.service \
   "$SSH_SERVER:$APP_DIR/"
 
-ssh "$SSH_SERVER" <<EOF
+ssh -tt "$SSH_SERVER" <<EOF
 set -euo pipefail
 
-echo "Verifying Python dependencies..."
-sudo apt-get install -y python3-flask wireguard
+REMOTE_PATH="\$HOME/$APP_DIR"
 
-cd "$APP_DIR"
+cd "\$REMOTE_PATH"
 
 echo "Updating systemd service file"
+sed "s|\\\${VPN_AGENT_DIR}|\$REMOTE_PATH|g" wg-agent.template.service > wg-agent.service
 sudo mv wg-agent.service /etc/systemd/system/wg-agent.service
 
 echo "Reloading deamon"
